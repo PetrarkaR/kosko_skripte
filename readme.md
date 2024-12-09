@@ -94,8 +94,3 @@ Napomene
 Prilagodite putanje do fajlova po potrebi
 Proverite da li su sve zavisnosti instalirane
 Indeks uređaja za kameru može varirati
-Licenca
-[MIT]
-
-Saradnici
-[Petar Ristic]
