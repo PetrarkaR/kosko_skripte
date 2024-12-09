@@ -9,9 +9,11 @@ Obrađuje unos sa kamere
 
 Detektuje sportske lopte korišćenjem mašinskog učenja
 
-Ključne Karakteristike:
+Streamuje video na web za pracenje 
 
-## Integracija sa OpenCV
+## Ključne Karakteristike:
+
+Integracija sa OpenCV
 
 Inferencija preko ONNX Runtime-a
 
@@ -24,6 +26,7 @@ Zavisnosti:
 - OpenCV
 - NumPy
 - ONNX Runtime
+- Flask
 # 2. convertor.py
 ## Alat za konverziju video zapisa
 

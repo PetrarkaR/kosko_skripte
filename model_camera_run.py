@@ -2,6 +2,10 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import time
+from flask import Flask, Response
+import threading
+
+app = Flask(__name__)
 
 class YOLOBallDetector:
     def __init__(self, onnx_path):
@@ -12,13 +16,17 @@ class YOLOBallDetector:
         # Adjust for sports ball detection
         self.ball_class_ids = [32]  # COCO dataset sports ball class
         self.custom_labels = {32: "sports_ball"}
+        
+        # Shared frame for streaming
+        self.current_frame = None
+        self.lock = threading.Lock()
 
     def detect_objects(self, image, confidence_threshold=0.3, nms_threshold=0.5):
         # Get original image dimensions
         height, width, _ = image.shape
 
         # Resize image for inference (optimized for performance)
-        input_size = (320, 320)  # Smaller size for faster processing on Raspberry Pi
+        input_size = (416, 416)  # Smaller size for faster processing on Raspberry Pi
         resized_image = cv2.resize(image, input_size)
         
         # Preprocessing
@@ -93,27 +101,13 @@ class YOLOBallDetector:
 
         return output
 
-
-def main():
-    # Path to ONNX model (adjust for Raspberry Pi file system)
-    onnx_path = "/home/pi/ball_detection/yolov5l.onnx"
-
-    # Create detector
-    detector = YOLOBallDetector(onnx_path)
-
-    # Open camera capture
-    try:
-        # Try different camera indices if needed
+    def start_detection(self):
+        # Open camera capture
         cap = cv2.VideoCapture(0)
         
-        # Set camera resolution (adjust as needed)
+        # Set camera resolution
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        
-        # Check if camera opened successfully
-        if not cap.isOpened():
-            print("Error: Could not open camera.")
-            return
         
         # Performance tracking
         frame_count = 0
@@ -127,17 +121,18 @@ def main():
             # Flip frame horizontally (optional)
             frame = cv2.flip(frame, 1)
 
-            # Light preprocessing to reduce computational load
+            # Light preprocessing
             frame = cv2.GaussianBlur(frame, (3, 3), 0)
 
             # Detect objects
-            detections = detector.detect_objects(frame)
+            detections = self.detect_objects(frame)
 
             # Draw detections
-            output_frame = detector.draw_detections(frame, detections)
+            output_frame = self.draw_detections(frame, detections)
 
-            # Display frame
-            cv2.imshow('Ball Detection', output_frame)
+            # Update shared frame with thread safety
+            with self.lock:
+                self.current_frame = output_frame
 
             # Performance tracking
             frame_count += 1
@@ -147,18 +142,53 @@ def main():
                 frame_count = 0
                 start_time = time.time()
 
-            # Exit on 'q'
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+    def get_frame(self):
+        # Retrieve the current frame with thread safety
+        with self.lock:
+            if self.current_frame is None:
+                return None
+            # Encode frame for streaming
+            ret, buffer = cv2.imencode('.jpg', self.current_frame)
+            return buffer.tobytes()
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
+# Global detector instance
+detector = YOLOBallDetector("/home/pi/ball_detection/yolov5l.onnx")
 
-    finally:
-        # Cleanup
-        cap.release()
-        cv2.destroyAllWindows()
+@app.route('/video_feed')
+def video_feed():
+    def generate():
+        while True:
+            frame = detector.get_frame()
+            if frame is None:
+                continue
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+    
+    return Response(generate(), 
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/')
+def index():
+    return """
+    <html>
+    <head>
+        <title>Ball Detection Stream</title>
+    </head>
+    <body>
+        <h1>Ball Detection Video Stream</h1>
+        <img src="/video_feed" width="640" height="480">
+    </body>
+    </html>
+    """
+
+def main():
+    # Start detection in a separate thread
+    detection_thread = threading.Thread(target=detector.start_detection)
+    detection_thread.daemon = True
+    detection_thread.start()
+
+    # Run Flask app
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
 
 if __name__ == "__main__":
     main()
