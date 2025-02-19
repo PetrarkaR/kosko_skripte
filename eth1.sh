@@ -116,5 +116,3 @@ dhcp-option=3
 leasefile-ro
 EOL
 
-# 7. Final reboot
-sudo reboot
