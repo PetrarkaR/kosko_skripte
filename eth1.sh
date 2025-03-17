@@ -163,10 +163,10 @@ fi
 if ! nmcli con show bridge-slave-usb1 &> /dev/null; then
     nmcli con add type bridge-slave ifname usb1 master br0 con-name bridge-slave-usb1
 fi
-
+apt-get install dnsmasq
 # 6. Dnsmasq configuration
 echo "▶▶ Configuring dnsmasq..."
-cat > /etc/dnsmasq.d/br0.conf <<EOL
+cat > /etc/dnsmasq.d/br0 <<EOL
 interface=br0
 dhcp-range=10.55.0.2,10.55.0.6,255.255.255.248,1h
 dhcp-option=3
