@@ -5,7 +5,7 @@ sudo chmod +x cam.sh
 sudo chmod +x rpi-connect.sh
 sudo chmod +x hailo.sh
 
-sudo ./eth1.sh
-sudo ./cam.sh
-sudo ./rpi-connect.sh
-sudo ./hailo.sh
+sudo ./eth1.sh -y
+sudo ./cam.sh -y
+sudo ./rpi-connect.sh -y
+sudo ./hailo.sh -y
