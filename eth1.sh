@@ -19,7 +19,7 @@ cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
 cp /etc/modules /etc/modules.bak
 
 # Add dwc2 overlay safely
-if ! grep -q "dtoverlay=dwc2" /boot/firmware/config.txt; then
+if  grep -q "dtoverlay=dwc2" /boot/firmware/config.txt; then
     echo "dtoverlay=dwc2" >> /boot/firmware/config.txt
 fi
 
@@ -167,9 +167,13 @@ apt-get install dnsmasq
 # 6. Dnsmasq configuration
 echo "▶▶ Configuring dnsmasq..."
 cat > /etc/dnsmasq.d/br0 <<EOL
+dhcp-authoritative
+dhcp-rapid-commit
+no-ping
 interface=br0
 dhcp-range=10.55.0.2,10.55.0.6,255.255.255.248,1h
 dhcp-option=3
+leasefile-ro
 EOL
 
 # 7. Final setup
