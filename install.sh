@@ -9,5 +9,6 @@ sudo chmod +x systemd.sh
 sudo ./eth1.sh -y
 sudo ./cam.sh -y
 sudo ./rpi-connect.sh -y
-sudo ./hailo.sh -y
 sudo ./systemd.sh -y
+sudo ./hailo.sh -y
+
