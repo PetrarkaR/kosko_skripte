@@ -28,6 +28,7 @@ filename = 'scores.txt'
 headers = {
     "Content-Type": "application/json",
     "Accept": "application/json",
+    "User-Agent": "curl/7.68.0"
 }
 
 def send_file_to_url(filename, url):
