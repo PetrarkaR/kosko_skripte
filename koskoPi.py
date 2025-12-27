@@ -1,3 +1,4 @@
+from logging import config
 import os
 import argparse
 import time
@@ -30,43 +31,62 @@ headers = {
     "Accept": "application/json",
     "User-Agent": "curl/7.68.0"
 }
+CONFIG_FILE = "/boot/cnf.txt"
+SCORES_FILE = "scores.txt"
 
-def send_file_to_url(filename, url):
+def load_config(path):
+    with open(path, "r") as f:
+        config = {}
+        for line in f:
+            line = line.strip()
+            if ":" in line:
+                k, v = line.split(":", 1)
+                config[k] = v
+
+    if "I" not in config:
+        raise RuntimeError("Missing device ID (I) in cnf.txt")
+
+    if "P" not in config:
+        config["P"] = "0"
+
+    return config
+
+
+def send_file_to_url(filename, url, device_id):
     with open(filename, 'r') as file:
         lines = file.readlines()
 
-    i_value = [line.strip().split(':')[1] for line in lines if line.startswith("I:")][0]
-    p_value = [line.strip().split(':')[1] for line in lines if line.startswith("P:")][0]
+    p_value = next(
+        (line.split(":")[1].strip() for line in lines if line.startswith("P:")),
+        "0"
+    )
 
     json_payload = {
-        "id": i_value,
+        "id": device_id,
         "logs": [
             {
-                "id": i_value,
+                "id": device_id,
                 "points": int(p_value)
             }
         ]
     }
-    
     headers = {'Content-Type': 'application/json'}
     response = requests.post(url, json=json_payload, headers=headers)
 
     if response.status_code == 200:
-        print("File successfully sent to the URL.")
         with open(filename, "w") as file:
-                            formatted_string = f"I:00003\nP:0\n"
-                            file.write(formatted_string)
-                            file.flush()
-                            os.fsync(file.fileno())
+            file.write(f"I:{device_id}\nP:0\n")
+            file.flush()
+            os.fsync(file.fileno())
         return True
-    else:
-        print(f"Failed to send file. Status code: {response.status_code}, Response: {response.text}")
-        return False
 
+    print(f"Failed to send file: {response.status_code} {response.text}")
+    return False
 
 
 class BasketDetector:
-    def __init__(self, rim_center, rim_radius, strictness='medium'):
+    def __init__(self, rim_center, rim_radius,device_id ,strictness='medium'):
+        self.device_id = device_id
         self.rim_center_x, self.rim_center_y = rim_center
         self.rim_radius_x, self.rim_radius_y = rim_radius
         self.ball_trackers = {}
@@ -273,7 +293,7 @@ class BasketDetector:
                         tracker['was_above_rim'] = False  # Reset for next potential basket
                         
                         with open(filename, "w") as file:
-                            formatted_string = f"I:00003\nP:{current_count}\n"
+                            formatted_string = f"I:{self.device_id}\nP:{current_count}\n"
                             file.write(formatted_string)
                             file.flush()
                             os.fsync(file.fileno())
@@ -295,11 +315,11 @@ class BasketDetector:
         
         return current_count, frame
     
-def initialize_detector(avg_center_x, avg_center_y, avg_max_radius, avg_min_radius, strictness='lenient'):
+def initialize_detector(avg_center_x, avg_center_y, avg_max_radius, avg_min_radius,device_id ,strictness='lenient'):
     """Initialize the detector with rim parameters and strictness level"""
     rim_center = (avg_center_x, avg_center_y)
     rim_radius = (avg_max_radius/2, avg_min_radius/2)
-    return BasketDetector(rim_center, rim_radius, strictness)
+    return BasketDetector(rim_center, rim_radius, device_id, strictness)
 
 def calculate_stats(times):
     """Calculate statistics for inference times"""
@@ -475,6 +495,8 @@ def parse_args():
 
 
 def main():
+    config = load_config(CONFIG_FILE)
+    DEVICE_ID = config["I"]
     try:
         args = parse_args()
 
@@ -572,7 +594,7 @@ def main():
 
                             if rim_locked and 'detector' not in locals():
                                 print("Initializing BasketDetector...")
-                                detector = initialize_detector(avg_center_x, avg_center_y, avg_max_radius, avg_min_radius, 'very_lenient')
+                                detector = initialize_detector(avg_center_x, avg_center_y, avg_max_radius, avg_min_radius,DEVICE_ID ,'very_lenient')
                         
                         # Always check for baskets if rim is locked (even between detection intervals)
                         if rim_locked:
@@ -595,7 +617,7 @@ def main():
                         #video_writer.write(frame)
                         
                         if total_frames % 90000 == 0:
-                            if(send_file_to_url(filename, url)):
+                            if(send_file_to_url(filename, url,DEVICE_ID)):
                                 basket_count=0
 
                             
