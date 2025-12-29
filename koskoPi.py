@@ -527,7 +527,7 @@ def main():
 
         hef = HEF(args.hef)
         outputs = hef.get_output_vstream_infos()
-        rim_detector = RimDetector()
+        rim_detector = RimDetector(debug_mode=False)
         basket_count = 0
         rim_locked = False
         global total_frames
