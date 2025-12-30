@@ -31,7 +31,7 @@ headers = {
     "Accept": "application/json",
     "User-Agent": "curl/7.68.0"
 }
-CONFIG_FILE = "/boot/cnf.txt"
+CONFIG_FILE = "/boot/overlays/cnf.txt"
 SCORES_FILE = "scores.txt"
 
 def load_config(path):
