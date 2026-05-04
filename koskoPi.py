@@ -468,6 +468,11 @@ def main():
                         results = post_nms_infer(raw, output_name)
                         if need_display:
                             frame = draw_boxes(frame, results, used_colors)
+                            cv2.putText(
+                                frame, "Masinski fakultet u Nisu",
+                                (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.7, (255, 255, 255), 2, cv2.LINE_AA,
+                            )
 
                         # --- Rim detection (periodic or until locked) ---
                         if frames_since_rim_check >= RIM_RECHECK_INTERVAL or not rim_locked:
