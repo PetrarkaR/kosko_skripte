@@ -5,30 +5,34 @@ import os
 
 class RimDetector:
     def __init__(self, debug_mode=False):
-        # HSV ranges for orange/red rim (assuming BGR input)
-        self.lower_mask = np.array([0, 40, 40])
-        self.upper_mask = np.array([20, 255, 255])
-        self.lower_orange = np.array([160, 40, 40])
+        # HSV ranges for orange/red rim — WIDENED
+        # Hue:        0-25 and 155-180
+        # Saturation:  20 floor
+        # Value:       30 floor
+        self.lower_mask   = np.array([0,   20, 30])
+        self.upper_mask   = np.array([25,  255, 255])
+        self.lower_orange = np.array([155, 20, 30])
         self.upper_orange = np.array([180, 255, 255])
 
+        # Initialisation window
         self.initialization_frames = 20
         self.frame_count = 0
-        self.total_center_x = 0.0
-        self.total_center_y = 0.0
+        self.total_center_x  = 0.0
+        self.total_center_y  = 0.0
         self.total_max_radius = 0.0
         self.total_min_radius = 0.0
         self.total_avg_radius = 0.0
-        self.total_area = 0.0
+        self.total_area  = 0.0
         self.total_angle = 0.0
 
-        # Final fixed position (None until initialization complete)
+        # Final fixed position (None until initialisation complete)
         self.fixed_ellipse = None
 
-        self.kernel = np.ones((3, 3), np.uint8)
+        self.kernel      = np.ones((3, 3), np.uint8)
         self.edge_kernel = np.ones((2, 2), np.uint8)
 
         # CLAHE instances — created once, reused every frame
-        self.clahe_gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        self.clahe_gray  = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         self.clahe_value = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
 
         # Circularity constraints
@@ -39,7 +43,7 @@ class RimDetector:
 
         # Debug mode
         self.debug_mode = debug_mode
-        self.debug_dir = "debug_frames"
+        self.debug_dir  = "debug_frames"
         if self.debug_mode:
             os.makedirs(self.debug_dir, exist_ok=True)
 
@@ -83,25 +87,28 @@ class RimDetector:
             return False
 
         if contour is not None:
-            area = cv2.contourArea(contour)
+            area      = cv2.contourArea(contour)
             perimeter = cv2.arcLength(contour, True)
+
+            if perimeter < 100:
+                return False
 
             if perimeter > 0:
                 circularity = 4.0 * np.pi * area / (perimeter * perimeter)
                 if debug:
-                    print(f"    Circularity: {circularity:.3f} (must be >= 0.2)")
-                if circularity < 0.2:
+                    print(f"    Circularity: {circularity:.3f} (must be >= 0.15)")
+                if circularity < 0.15:
                     if debug:
                         print("    ✗ FAILED: Circularity too low")
                     return False
 
-            hull = cv2.convexHull(contour)
+            hull      = cv2.convexHull(contour)
             hull_area = cv2.contourArea(hull)
             if hull_area > 0:
                 solidity = area / hull_area
                 if debug:
-                    print(f"    Solidity: {solidity:.3f} (must be >= 0.4)")
-                if solidity < 0.4:
+                    print(f"    Solidity: {solidity:.3f} (must be >= 0.35)")
+                if solidity < 0.35:
                     if debug:
                         print("    ✗ FAILED: Solidity too low")
                     return False
@@ -115,7 +122,8 @@ class RimDetector:
     # ------------------------------------------------------------------
 
     def _save_debug(self, image, name, frame_num):
-        if self.debug_mode and frame_num <= 5:
+        """Save debug images.  Always saves when debug_mode is on."""
+        if self.debug_mode:
             path = os.path.join(self.debug_dir, f"frame_{frame_num:03d}_{name}.jpg")
             cv2.imwrite(path, image)
 
@@ -129,12 +137,12 @@ class RimDetector:
 
         # Adaptive Canny thresholds from median intensity
         med = float(np.median(enhanced))
-        lo = int(max(0, 0.55 * med))
-        hi = int(min(255, 1.4 * med))
+        lo  = int(max(0,   0.55 * med))
+        hi  = int(min(255, 1.4  * med))
         edges = cv2.Canny(enhanced, lo, hi)
 
-        # Dilate to bridge small gaps in the rim contour
-        edges = cv2.dilate(edges, self.edge_kernel, iterations=2)
+        # Dilate aggressively so edges overlap with colour mask
+        edges = cv2.dilate(edges, self.edge_kernel, iterations=3)
         return edges
 
     def _build_colour_mask(self, bgr):
@@ -143,19 +151,19 @@ class RimDetector:
 
         # Enhance the Value channel so dim / unevenly-lit rims pop
         h, s, v = cv2.split(hsv)
-        v = self.clahe_value.apply(v)
+        v   = self.clahe_value.apply(v)
         hsv = cv2.merge([h, s, v])
 
         hsv = cv2.GaussianBlur(hsv, (3, 3), 0)
 
-        mask_lo = cv2.inRange(hsv, self.lower_mask, self.upper_mask)
+        mask_lo = cv2.inRange(hsv, self.lower_mask,   self.upper_mask)
         mask_hi = cv2.inRange(hsv, self.lower_orange, self.upper_orange)
-        colour = cv2.bitwise_or(mask_lo, mask_hi)
+        colour  = cv2.bitwise_or(mask_lo, mask_hi)
 
-        # Clean up
-        colour = cv2.dilate(colour, self.kernel, iterations=1)
+        # Dilate so the colour blob reaches the edge pixels
+        colour = cv2.dilate(colour, self.kernel, iterations=2)
         colour = cv2.morphologyEx(colour, cv2.MORPH_CLOSE, self.kernel)
-        colour = cv2.morphologyEx(colour, cv2.MORPH_OPEN, self.kernel)
+        # NOTE: MORPH_OPEN deliberately removed — it was eroding thin rim arcs
         return colour
 
     # ------------------------------------------------------------------
@@ -178,16 +186,29 @@ class RimDetector:
         if self.fixed_ellipse is not None:
             return self.fixed_ellipse
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        edges = self._build_edge_mask(gray)
+        # --- Frame-1 pixel diagnostic (helps calibrate HSV thresholds) ---
+        if current_frame == 1:
+            fh, fw = frame.shape[:2]
+            cy_, cx_ = fh // 3, fw // 2
+            patch = frame[max(0, cy_-10):cy_+10, max(0, cx_-10):cx_+10]
+            b_avg = float(np.mean(patch[:, :, 0]))
+            g_avg = float(np.mean(patch[:, :, 1]))
+            r_avg = float(np.mean(patch[:, :, 2]))
+            print(
+                f"RIM PIXEL SAMPLE — B:{b_avg:.0f}  G:{g_avg:.0f}  R:{r_avg:.0f}  "
+                f"R/G:{r_avg/max(g_avg, 1):.2f}  R/B:{r_avg/max(b_avg, 1):.2f}"
+            )
+
+        gray   = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        edges  = self._build_edge_mask(gray)
         colour = self._build_colour_mask(frame)
 
         # Combine: keep only edges that overlap with colour
         combined = cv2.bitwise_and(colour, edges)
         combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, self.kernel, iterations=2)
 
-        self._save_debug(edges, "edges", current_frame)
-        self._save_debug(colour, "colour", current_frame)
+        self._save_debug(edges,    "edges",    current_frame)
+        self._save_debug(colour,   "colour",   current_frame)
         self._save_debug(combined, "combined", current_frame)
 
         # Contour search
@@ -196,7 +217,7 @@ class RimDetector:
         )
 
         valid_ellipse = None
-        largest_area = 0
+        largest_area  = 0
 
         for contour in contours:
             if len(contour) < 5:
@@ -207,13 +228,13 @@ class RimDetector:
                 continue
             area = cv2.contourArea(contour)
             if self.is_valid_rim(ellipse, contour) and area > largest_area:
-                largest_area = area
+                largest_area  = area
                 valid_ellipse = ellipse
 
-        # Debug: first frame diagnostics
+        # Frame-1 diagnostics
         if self.debug_mode and current_frame == 1:
             print(f"\n=== FRAME {current_frame} DEBUG ===")
-            print(f"Contours: {len(contours)}")
+            print(f"Contours found: {len(contours)}")
             if valid_ellipse is not None:
                 print(f"Best ellipse area: {largest_area:.0f}")
 
@@ -224,23 +245,23 @@ class RimDetector:
 
         # Accumulate during initialisation window
         if self.frame_count < self.initialization_frames:
-            cx, cy = valid_ellipse[0]
+            cx, cy     = valid_ellipse[0]
             major, minor = valid_ellipse[1]
-            angle = valid_ellipse[2]
+            angle      = valid_ellipse[2]
 
-            self.total_center_x += cx
-            self.total_center_y += cy
+            self.total_center_x   += cx
+            self.total_center_y   += cy
             self.total_max_radius += max(major, minor) / 2.0
             self.total_min_radius += min(major, minor) / 2.0
             self.total_avg_radius += (major + minor) / 4.0
-            self.total_area += np.pi * (major / 2.0) * (minor / 2.0)
-            self.total_angle += angle
-            self.frame_count += 1
+            self.total_area       += np.pi * (major / 2.0) * (minor / 2.0)
+            self.total_angle      += angle
+            self.frame_count      += 1
 
             if self.frame_count == self.initialization_frames:
                 n = float(self.initialization_frames)
                 avg_center = (self.total_center_x / n, self.total_center_y / n)
-                avg_axes = (
+                avg_axes   = (
                     2.0 * self.total_avg_radius / n,
                     2.0 * self.total_min_radius / n,
                 )
@@ -250,7 +271,7 @@ class RimDetector:
                     f"\n=== RIM LOCKED ===\n"
                     f"Center: ({avg_center[0]:.1f}, {avg_center[1]:.1f})\n"
                     f"Radii : ({avg_axes[0]/2:.1f}, {avg_axes[1]/2:.1f})\n"
-                    f"==================\n"
+                    f"=================="
                 )
                 return self.fixed_ellipse
 
@@ -266,21 +287,26 @@ class RimDetector:
         """Return fixed rim parameters dict, or None if not yet locked."""
         if self.fixed_ellipse is None:
             return None
-        cx, cy = self.fixed_ellipse[0]
+        cx, cy       = self.fixed_ellipse[0]
         major, minor = self.fixed_ellipse[1]
         return {
-            "center_x": int(cx),
-            "center_y": int(cy),
-            "max_radius": int(max(major, minor) / 2),
-            "min_radius": int(min(major, minor) / 2),
-            "avg_radius": int((major + minor) / 4),
-            "area": int(np.pi * (major / 2) * (minor / 2)),
+            "center_x":               int(cx),
+            "center_y":               int(cy),
+            "max_radius":             int(max(major, minor) / 2),
+            "min_radius":             int(min(major, minor) / 2),
+            "avg_radius":             int((major + minor) / 4),
+            "area":                   int(np.pi * (major / 2) * (minor / 2)),
             "initialization_complete": self.frame_count >= self.initialization_frames,
         }
 
     def draw_rim(self, frame, ellipse):
         """Draw the rim ellipse and centre dot on *frame* in-place."""
-        if ellipse is not None:
-            cv2.ellipse(frame, ellipse, (0, 255, 125), 3)
-            center = (int(ellipse[0][0]), int(ellipse[0][1]))
-            cv2.circle(frame, center, 3, (0, 0, 255), -1)
+        cv2.ellipse(frame, ellipse, (0, 255, 0), 2)
+        cx = int(ellipse[0][0])
+        cy = int(ellipse[0][1])
+        cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+        cv2.putText(
+            frame, "RIM",
+            (cx - 15, cy - 15),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1,
+        )
