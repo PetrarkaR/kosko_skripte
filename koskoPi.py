@@ -517,6 +517,7 @@ def main():
 
                         # --- Optional recording ---
                         if video_writer is not None:
+                            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                             video_writer.write(frame)
 
                         # --- Optional live display ---
